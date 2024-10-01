@@ -1,0 +1,21 @@
+{
+    "config": {
+        "HASSUSERIDHERE": {
+            "name": "NAMEOFUSER",
+            "music_access": true,
+            "music_notification": true,
+            "mobile_transfer_music_access": true,
+            "mobile_transfer_music_entity": "HA MOBILE MEDIA SESSION ENTITY ID HERE",
+            "music_notification_service": "HA MOBILE NOTIFICATION SERVICE HERE",
+            "music_notification_level": 2,
+            "music_entities": {
+                "switch": "INPUT BOOL TO STORE SESSION ON/OFF STATE",
+                "current_player": "INPUT TEXT TO STORE CURRENT MEDIA PLAYER ENTITY ID",
+                "playlist": "INPUT TEXT STORING NAME OF PLAYLIST TO PLAY"
+            }
+        }
+    },
+    "mass_tags": {
+        "TAG ID FROM HOME ASSISTANT": "MEDIA PLAYER ENTITY ID"
+    }
+}
