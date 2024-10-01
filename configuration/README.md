@@ -74,6 +74,7 @@ This section links **NFC tags** with **media players**. When a tag is scanned, t
 You will need to setup a sensor within Home Assistant to read this file. There are multiple tutorials online on how to set this up, I have linked a couple below:
 
 [**Using jq (command line)**](https://www.petekeen.net/static-json-in-home-assistant/)
+
 [**Using REST sensor**](https://community.home-assistant.io/t/how-do-i-get-a-local-json-file-to-load-using-rest-or-file/635033)
 
 Either way, for `json_attributes` you will need to configure as provided in the following example.
