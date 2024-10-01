@@ -1,0 +1,129 @@
+alias: MASS NFC Music Player State Changes
+description: >-
+  This automation will reset switch and current_player for listed entities.
+  Requires media playback via NFC rather than direct
+trigger:
+  - platform: event
+    event_type: state_changed
+    event_data: {}
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.entity_id in
+      (state_attr('sensor.nfc_scanned_tag_configuration', 'mass_tags').values()
+      | list) }}
+  - condition: template
+    value_template: "{{ saver_variable(trigger.event.data.entity_id) != null}}"
+action:
+  - variables:
+      config: >-
+        {{ state_attr('sensor.nfc_scanned_tag_configuration',
+        'config')[saver_variable(trigger.event.data.entity_id)] }}
+      requested_playback_start: >-
+        {{ saver_variable((saver_variable(trigger.event.data.entity_id) ~
+        'nfc_music')) }}
+  - if:
+      - condition: template
+        value_template: "{{ config == null or config == ''}}"
+    then:
+      - action: system_log.write
+        metadata: {}
+        data:
+          level: debug
+          logger: mass-nfc-controller-state
+          message: No session associated with {{ trigger.event.data.entity_id }}
+        alias: "Debug: Missing Saver Variable"
+      - stop: No Session
+        error: true
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.event.data.new_state.state == 'off' and
+              trigger.event.data.entity_id ==
+              states(config.music_entities.current_player) }}
+        sequence:
+          - action: system_log.write
+            metadata: {}
+            data:
+              level: debug
+              logger: mass-nfc-controller-state
+              message: >-
+                Media player {{ trigger.event.data.entity_id }} has been turned
+                off. Deleting variable and resetting {{
+                config.music_entities.current_player }} and {{
+                config.music_entities.switch }} for user {{ config.name }}
+            alias: "Debug: Media Player Off"
+          - action: saver.delete_variable
+            metadata: {}
+            data:
+              name: "{{ trigger.event.data.entity_id }}"
+          - action: input_text.set_value
+            metadata: {}
+            data:
+              value: ""
+            target:
+              entity_id: "{{ config.music_entities.current_player }}"
+          - action: input_boolean.turn_off
+            metadata: {}
+            data: {}
+            target:
+              entity_id: "{{ config.music_entities.switch }}"
+        alias: "Off"
+      - conditions:
+          - alias: Player idle or moved to a different player
+            condition: or
+            conditions:
+              - condition: template
+                value_template: "{{ trigger.event.data.new_state.state in ['paused', 'idle'] }}"
+              - condition: template
+                value_template: >-
+                  {{ trigger.event.data.entity_id !=
+                  states(config.music_entities.current_player) }}
+                enabled: false
+        sequence:
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ trigger.event.data.entity_id ==
+                  states(config.music_entities.current_player) }}
+            then:
+              - action: system_log.write
+                metadata: {}
+                data:
+                  level: debug
+                  logger: mass-nfc-controller-state
+                  message: >-
+                    Media player {{ trigger.event.data.entity_id }} paused,
+                    waiting for 20mins until turning off.
+                alias: "Debug: Media Player Off"
+              - delay:
+                  hours: 0
+                  minutes: 20
+                  seconds: 0
+                  milliseconds: 0
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ states(trigger.event.data.entity_id) in ["paused", "idle"]
+                  }}
+            then:
+              - if:
+                  - condition: template
+                    value_template: "{{ states(trigger.event.data.entity_id) != 'off' }}"
+                then:
+                  - action: system_log.write
+                    metadata: {}
+                    data:
+                      level: debug
+                      logger: mass-nfc-controller-state
+                      message: Turning off {{ trigger.event.data.entity_id }}.
+                    alias: "Debug: Media Player Off"
+                  - action: media_player.turn_off
+                    metadata: {}
+                    data: {}
+                    target:
+                      entity_id: "{{ trigger.event.data.entity_id }}"
+        alias: Paused
+mode: parallel
+max: 10

@@ -1,0 +1,138 @@
+alias: MASS NFC Music Notifications
+description: >-
+  This automation will send a sticky notification to a given device with 3
+  buttons; previous, play/pause, next.
+
+  The notification action will open MASS if configured within n8n
+trigger:
+  - platform: event
+    event_type: state_changed
+    event_data: {}
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.entity_id in
+      (state_attr('sensor.nfc_scanned_tag_configuration', 'mass_tags').values()
+      | list)}}
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.new_state.state == 'playing' or
+      trigger.event.data.new_state.state == 'paused' or
+      trigger.event.data.new_state.state == 'off' }}
+  - condition: template
+    value_template: "{{ saver_variable(trigger.event.data.entity_id) != null}}"
+  - condition: template
+    value_template: |-
+      {{ state_attr('sensor.nfc_scanned_tag_configuration',
+          'config')[saver_variable(trigger.event.data.entity_id)] != null and state_attr('sensor.nfc_scanned_tag_configuration',
+          'config')[saver_variable(trigger.event.data.entity_id)] != '' }}
+action:
+  - variables:
+      config: >-
+        {{ state_attr('sensor.nfc_scanned_tag_configuration',
+        'config')[saver_variable(trigger.event.data.entity_id)] }}
+  - variables:
+      click_action: >-
+        {{ '/d5369777_music_assistant' if config.music_notification_level > 1
+        else '' }}
+      artist: >-
+        {{ '' if 'media_artist' not in trigger.event.data.new_state.attributes
+        else trigger.event.data.new_state.attributes.media_artist }}
+      title: >-
+        {{ 'Unknown' if 'media_title' not in
+        trigger.event.data.new_state.attributes else
+        trigger.event.data.new_state.attributes.media_title }}
+      action_previous: "{{ 'PREVIOUS_' ~ context.id }}"
+      action_play: "{{ 'PLAY_' ~ context.id }}"
+      action_next: "{{ 'NEXT_' ~ context.id }}"
+      action_stop: "{{ 'STOP_' ~ context.id }}"
+  - alias: Notification Control
+    choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.event.data.new_state.state == 'playing' or
+              trigger.event.data.new_state.state == 'paused' }}
+        sequence:
+          - data:
+              title: Music Assistant
+              message: >-
+                {{artist}}{{ (' - ' if (artist | length) > 0 else '') }} {{
+                title }}
+              data:
+                channel: Music Notifications
+                clickAction: "{{ click_action }}"
+                sticky: true
+                persistent: true
+                actions:
+                  - action: "{{ action_previous }}"
+                    title: Previous
+                  - action: "{{ action_play }}"
+                    title: Play/Pause
+                  - action: "{{ action_next }}"
+                    title: Next
+                notification_icon: mdi:audio-video
+                tag: musicon
+            action: "{{ config.music_notification_service }}"
+        alias: MAON
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.new_state.state == 'off' }}"
+        sequence:
+          - data:
+              message: clear_notification
+              data:
+                tag: musicon
+            action: "{{ config.music_notification_service }}"
+        alias: MAOFF
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "{{ action_previous }}"
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "{{ action_play }}"
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "{{ action_next }}"
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "{{ action_stop }}"
+    timeout:
+      hours: 0
+      minutes: 15
+      seconds: 0
+      milliseconds: 0
+    continue_on_timeout: false
+    alias: Wait For Action
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger.event.data.action == action_previous }}"
+        sequence:
+          - target:
+              entity_id: "{{ states(config.music_entities.current_player) }}"
+            data: {}
+            action: media_player.media_previous_track
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger.event.data.action == action_play }}"
+        sequence:
+          - target:
+              entity_id: "{{ states(config.music_entities.current_player) }}"
+            data: {}
+            action: media_player.media_play_pause
+      - conditions:
+          - condition: template
+            value_template: "{{ wait.trigger.event.data.action == action_next }}"
+        sequence:
+          - target:
+              entity_id: "{{ states(config.music_entities.current_player) }}"
+            data: {}
+            action: media_player.media_next_track
+    alias: Mobile Action
+mode: restart

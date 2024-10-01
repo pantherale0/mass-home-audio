@@ -1,0 +1,186 @@
+alias: MASS NFC Music Controller
+description: ""
+trigger:
+  - platform: event
+    event_type: tag_scanned
+    context: {}
+condition:
+  - alias: Valid Tag
+    condition: template
+    value_template: >-
+      {{ trigger.event.data.tag_id in
+      (state_attr('sensor.nfc_scanned_tag_configuration', 'mass_tags').keys() |
+      list) }}
+action:
+  - variables:
+      origin: "{{ trigger.event.origin }}"
+      config: >-
+        {{ state_attr('sensor.nfc_scanned_tag_configuration',
+        'config')[trigger.event.context.user_id] }}
+      player: >-
+        {{ state_attr('sensor.nfc_scanned_tag_configuration',
+        'mass_tags')[trigger.event.data.tag_id] }}
+  - if:
+      - condition: template
+        value_template: "{{ config.music_access == false }}"
+    then:
+      - stop: No Music Access
+        error: true
+  - variables:
+      transfer_source_player: "{{ config.music_entities.current_player }}"
+      switch_state: "{{ states(config.music_entities.switch) }}"
+      playlist: "{{ states(config.music_entities.playlist) }}"
+      switch: "{{ config.music_entities.switch }}"
+  - action: saver.set_variable
+    metadata: {}
+    data:
+      name: "{{player}}"
+      value: "{{trigger.event.context.user_id}}"
+    alias: Set Player User ID
+  - alias: Play Music If Nothing Playing
+    if:
+      - condition: template
+        value_template: "{{ switch_state == 'off' }}"
+    then:
+      - action: mass.play_media
+        metadata: {}
+        data:
+          radio_mode: true
+          media_type: playlist
+          media_id: "{{ playlist }}"
+        target:
+          entity_id: "{{ player }}"
+      - action: input_boolean.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: "{{ switch }}"
+      - action: input_text.set_value
+        metadata: {}
+        data:
+          value: "{{ player }}"
+        target:
+          entity_id: "{{ transfer_source_player }}"
+      - action: saver.set_variable
+        metadata: {}
+        data:
+          name: "{{ (trigger.event.context.user_id ~ 'nfc_music') }}"
+          value: "{{ now() }}"
+        alias: Set User NFC Music
+      - stop: ""
+  - alias: Transfer or Refresh Playlist
+    choose:
+      - conditions:
+          - alias: Check Mobile Transfer Enabled
+            condition: template
+            value_template: "{{ config.mobile_transfer_music_access }}"
+          - alias: Validate Mobile Has Active Media Session
+            condition: template
+            value_template: >-
+              {{ states(config.mobile_transfer_music_entity).lower() ==
+              "playing" }}
+        sequence:
+          - variables:
+              mobile_artist_attribute: >-
+                {{ (states[config.mobile_transfer_music_entity].attributes |
+                select('search', 'artist') | list) }}
+              mobile_album_attribute: >-
+                {{ (states[config.mobile_transfer_music_entity].attributes |
+                select('search', 'album') | list) }}
+              mobile_title_attribute: >-
+                {{ (states[config.mobile_transfer_music_entity].attributes |
+                select('search', 'title') | list) }}
+              mobile_position_attribute: >-
+                {{ (states[config.mobile_transfer_music_entity].attributes |
+                select('search', 'playback_position') | list) }}
+          - if:
+              - alias: Found Attribute
+                condition: template
+                value_template: >-
+                  {{ (mobile_artist_attribute | count > 0) and
+                  (mobile_title_attribute | count > 0) }}
+            then:
+              - variables:
+                  mobile_title: >-
+                    {{ state_attr(config.mobile_transfer_music_entity,
+                    mobile_title_attribute[0]) }}
+                  mobile_artist: >-
+                    {{ state_attr(config.mobile_transfer_music_entity,
+                    mobile_artist_attribute[0]) }}
+              - action: mass.play_media
+                metadata: {}
+                data:
+                  radio_mode: true
+                  media_type: track
+                  enqueue: replace
+                  media_id: "{{ mobile_title ~ mobile_artist }}"
+                  artist: "{{ mobile_artist }}"
+                target:
+                  entity_id: "{{ player }}"
+              - data:
+                  message: command_media
+                  data:
+                    media_command: pause
+                    media_package_name: "{{ mobile_artist_attribute[0].split('_')[1] }}"
+                action: "{{ config.music_notification_service }}"
+                alias: Send command to pause media
+              - if:
+                  - alias: Found Attribute
+                    condition: template
+                    value_template: "{{ (mobile_position_attribute | count > 0) }}"
+                then:
+                  - variables:
+                      mobile_position: >-
+                        {{ state_attr(config.mobile_transfer_music_entity,
+                        mobile_position_attribute[0]) }}
+                  - action: media_player.media_seek
+                    metadata: {}
+                    data:
+                      seek_position: "{{ mobile_position / 1000 }}"
+                    target:
+                      entity_id: "{{ config.music_notification_service }}"
+                alias: If Position Found, seek media player
+        alias: Mobile Transfer
+      - conditions:
+          - alias: If Player is this device
+            condition: template
+            value_template: "{{ states(transfer_source_player) == player }}"
+          - condition: template
+            value_template: "{{ switch_state == 'on' }}"
+        sequence:
+          - alias: Play New Mix
+            action: mass.play_media
+            metadata: {}
+            data:
+              radio_mode: true
+              media_type: playlist
+              media_id: "{{ states(playlist) }}"
+            target:
+              entity_id: "{{ player }}"
+        alias: Refresh
+      - conditions:
+          - alias: If Player is not this device
+            condition: template
+            value_template: "{{ states(transfer_source_player) != player }}"
+          - condition: template
+            value_template: "{{ switch_state == 'on' }}"
+        sequence:
+          - action: mass.transfer_queue
+            metadata: {}
+            data:
+              auto_play: true
+              source_player: "{{ states(transfer_source_player) }}"
+            target:
+              entity_id: "{{ player }}"
+          - action: input_text.set_value
+            metadata: {}
+            data:
+              value: "{{ player }}"
+            target:
+              entity_id: "{{ transfer_source_player }}"
+        alias: Transfer
+    default:
+      - stop: Unknown State
+        error: true
+mode: queued
+max: 10
