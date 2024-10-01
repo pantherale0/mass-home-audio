@@ -1,4 +1,4 @@
-# Music Assistant User Configuration
+# User Configuration
 
 This system allows you to configure user-specific access and control over the home audio setup, including music playback, notifications, and the ability to transfer media from personal devices to shared speakers. Below is a breakdown of the JSON configuration and how each key functions.
 
@@ -68,3 +68,27 @@ This section links **NFC tags** with **media players**. When a tag is scanned, t
 2. **Link NFC Tags**: Use the `mass_tags` section to map NFC tags to specific media players. When a user scans an NFC tag, the associated media player will start playing the defined playlist.
 
 3. **Control Via Mobile Notifications**: If `music_notification` is set to `true`, users will receive a mobile notification that allows them to control the playback. If `music_notification_level` is set to `2`, clicking the notification will open the Music Assistant frontend.
+
+# Home Assistant: Setting up a sensor
+
+You will need to setup a sensor within Home Assistant to read this file. There are multiple tutorials online on how to set this up, I have linked a couple below:
+
+[**Using jq (command line)**](https://www.petekeen.net/static-json-in-home-assistant/)
+[**Using REST sensor**](https://community.home-assistant.io/t/how-do-i-get-a-local-json-file-to-load-using-rest-or-file/635033)
+
+Either way, for `json_attributes` you will need to configure as provided in the following example.
+
+## Example configuration.yaml entry
+
+```
+sensor:
+  - platform: rest
+    resource: http://iamultrasecure.com/config.json
+    scan_interval: 60
+    name: NFC Scanned Tag Configuration
+    value_template: "{{ value_json.config | length }}"
+    json_attributes:
+    - "config"
+    - "mass_tags"
+    - "mass_current_players"
+```
