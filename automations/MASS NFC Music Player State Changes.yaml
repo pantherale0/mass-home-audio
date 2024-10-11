@@ -1,12 +1,12 @@
-alias: MASS NFC Music Player State Changes
+alias: NFC Music Player State Changes
 description: >-
   This automation will reset switch and current_player for listed entities.
   Requires media playback via NFC rather than direct
-trigger:
-  - platform: event
-    event_type: state_changed
+triggers:
+  - event_type: state_changed
     event_data: {}
-condition:
+    trigger: event
+conditions:
   - condition: template
     value_template: >-
       {{ trigger.event.data.entity_id in
@@ -14,7 +14,7 @@ condition:
       | list) }}
   - condition: template
     value_template: "{{ saver_variable(trigger.event.data.entity_id) != null}}"
-action:
+actions:
   - variables:
       config: >-
         {{ state_attr('sensor.nfc_scanned_tag_configuration',
@@ -24,7 +24,19 @@ action:
         'nfc_music')) }}
   - if:
       - condition: template
-        value_template: "{{ config == null or config == ''}}"
+        value_template: >-
+          {{ ((config != null and config != '') and
+          states(config.music_entities.switch) == 'off') }}
+    then:
+      - action: saver.delete_variable
+        metadata: {}
+        data:
+          name: "{{trigger.event.data.entity_id}}"
+  - if:
+      - condition: template
+        value_template: >-
+          {{ config == null or config == '' or
+          states(config.music_entities.switch) == 'off' }}
     then:
       - action: system_log.write
         metadata: {}
